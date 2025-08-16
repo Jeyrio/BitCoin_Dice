@@ -117,8 +117,6 @@
   (var-get game-counter)
 )
 
-;; COMMIT MESSAGE: feat: add comprehensive administrative controls and settings
-;; 
 ;; - Implement house funding and withdrawal system for contract owner
 ;; - Add dynamic betting limits configuration with validation
 ;; - Include emergency pause/unpause functionality for contract security
@@ -183,4 +181,82 @@
     total-games: (var-get game-counter),
     owner: CONTRACT_OWNER
   }
+)
+
+;; - Add paginated game history retrieval for better UX
+;; - Implement bulk game resolution for operational efficiency
+;; - Create comprehensive helper functions for data management
+;; - Add robust error handling for batch operations
+;; - Optimize gas usage with efficient data structures and algorithms
+
+;; NEW FUNCTION 6: Get recent games (with pagination)
+(define-read-only (get-recent-games (start-game-id uint) (count uint))
+  (let
+    (
+      (current-game-count (var-get game-counter))
+      (end-id (if (<= start-game-id current-game-count) start-game-id current-game-count))
+      (actual-count (if (> count u10) u10 count)) ;; Limit to 10 games max
+    )
+    (map get-game-by-id (generate-game-ids end-id actual-count))
+  )
+)
+
+;; NEW FUNCTION 7: Bulk resolve games (resolve multiple games at once)
+(define-public (bulk-resolve-games (game-ids (list 10 uint)))
+  (let
+    (
+      (results (map resolve-single-game game-ids))
+    )
+    (ok results)
+  )
+)
+
+;; Helper function for bulk resolve
+(define-private (resolve-single-game (game-id uint))
+  (match (resolve-game game-id)
+    success success
+    error { game-id: game-id, error: error }
+  )
+)
+
+;; Helper function to generate game IDs for recent games
+(define-private (generate-game-ids (start-id uint) (count uint))
+  (if (is-eq count u0)
+    (list)
+    (if (is-eq start-id u0)
+      (list)
+      (unwrap-panic (as-max-len? 
+        (concat 
+          (list start-id) 
+          (generate-game-ids (- start-id u1) (- count u1))
+        ) 
+        u10
+      ))
+    )
+  )
+)
+
+;; Helper function to get game by ID for mapping
+(define-private (get-game-by-id (game-id uint))
+  {
+    game-id: game-id,
+    game-data: (map-get? games { game-id: game-id })
+  }
+)
+
+;; Helper function to update player statistics
+(define-private (update-player-stats (player principal) (wagered uint) (won uint))
+  (let
+    (
+      (current-stats (get-player-stats player))
+    )
+    (map-set player-stats
+      { player: player }
+      {
+        games-played: (+ (get games-played current-stats) u1),
+        total-wagered: (+ (get total-wagered current-stats) wagered),
+        total-won: (+ (get total-won current-stats) won)
+      }
+    )
+  )
 )
