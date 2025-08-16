@@ -116,3 +116,71 @@
 (define-read-only (get-game-count)
   (var-get game-counter)
 )
+
+;; COMMIT MESSAGE: feat: add comprehensive administrative controls and settings
+;; 
+;; - Implement house funding and withdrawal system for contract owner
+;; - Add dynamic betting limits configuration with validation
+;; - Include emergency pause/unpause functionality for contract security
+;; - Create player statistics and contract info read-only functions
+;; - Ensure proper authorization checks for all administrative operations
+
+(define-public (fund-house (amount uint))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_UNAUTHORIZED)
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    (var-set house-balance (+ (var-get house-balance) amount))
+    (ok true)
+  )
+)
+
+;; NEW FUNCTION 1: Withdraw house funds (owner only)
+(define-public (withdraw-house-funds (amount uint))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_UNAUTHORIZED)
+    (asserts! (<= amount (var-get house-balance)) ERR_INSUFFICIENT_BALANCE)
+    (try! (as-contract (stx-transfer? amount tx-sender CONTRACT_OWNER)))
+    (var-set house-balance (- (var-get house-balance) amount))
+    (ok amount)
+  )
+)
+
+;; NEW FUNCTION 2: Set betting limits (owner only)
+(define-public (set-bet-limits (new-min-bet uint) (new-max-bet uint))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_UNAUTHORIZED)
+    (asserts! (> new-max-bet new-min-bet) ERR_INVALID_BET)
+    (var-set min-bet new-min-bet)
+    (var-set max-bet new-max-bet)
+    (ok { min-bet: new-min-bet, max-bet: new-max-bet })
+  )
+)
+
+;; NEW FUNCTION 3: Pause/unpause contract (owner only)
+(define-public (toggle-contract-pause)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_UNAUTHORIZED)
+    (var-set contract-paused (not (var-get contract-paused)))
+    (ok (var-get contract-paused))
+  )
+)
+
+;; NEW FUNCTION 4: Get player statistics
+(define-read-only (get-player-stats (player principal))
+  (default-to 
+    { games-played: u0, total-wagered: u0, total-won: u0 }
+    (map-get? player-stats { player: player })
+  )
+)
+
+;; NEW FUNCTION 5: Get contract info and settings
+(define-read-only (get-contract-info)
+  {
+    house-balance: (var-get house-balance),
+    min-bet: (var-get min-bet),
+    max-bet: (var-get max-bet),
+    contract-paused: (var-get contract-paused),
+    total-games: (var-get game-counter),
+    owner: CONTRACT_OWNER
+  }
+)
