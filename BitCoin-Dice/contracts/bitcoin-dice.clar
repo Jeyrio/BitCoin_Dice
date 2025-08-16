@@ -43,6 +43,23 @@
   }
 )
 
+;; Helper function to update player statistics
+(define-private (update-player-stats (player principal) (wagered uint) (won uint))
+  (let
+    (
+      (current-stats (get-player-stats player))
+    )
+    (map-set player-stats
+      { player: player }
+      {
+        games-played: (+ (get games-played current-stats) u1),
+        total-wagered: (+ (get total-wagered current-stats) wagered),
+        total-won: (+ (get total-won current-stats) won)
+      }
+    )
+  )
+)
+
 ;; - Add place-bet function with comprehensive validation and house balance checks
 ;; - Implement provably fair dice resolution using VRF for randomness
 ;; - Include automatic payout system with 5x multiplier for winning bets
@@ -70,7 +87,7 @@
         player: tx-sender,
         bet-amount: bet-amount,
         target-number: target-number,
-        block-height: block-height,
+        block-height: stacks-block-height,
         resolved: false,
         won: false
       }
@@ -86,7 +103,9 @@
   (let
     (
       (game-data (unwrap! (map-get? games { game-id: game-id }) ERR_GAME_NOT_FOUND))
-      (dice-roll (+ (mod (unwrap-panic (get-block-info? vrf-seed (get block-height game-data))) u6) u1))
+      ;; Generate pseudo-random number using block height and game data
+      (random-seed (+ (get block-height game-data) (get bet-amount game-data) game-id))
+      (dice-roll (+ (mod random-seed u6) u1))
       (won (is-eq dice-roll (get target-number game-data)))
       (payout (if won (* (get bet-amount game-data) u5) u0))
     )
@@ -189,16 +208,36 @@
 ;; - Add robust error handling for batch operations
 ;; - Optimize gas usage with efficient data structures and algorithms
 
-;; NEW FUNCTION 6: Get recent games (with pagination)
+;; NEW FUNCTION 6: Get recent games (simplified approach)
 (define-read-only (get-recent-games (start-game-id uint) (count uint))
   (let
     (
       (current-game-count (var-get game-counter))
-      (end-id (if (<= start-game-id current-game-count) start-game-id current-game-count))
-      (actual-count (if (> count u10) u10 count)) ;; Limit to 10 games max
+      (actual-start (if (> start-game-id current-game-count) current-game-count start-game-id))
+      (actual-count (if (> count u10) u10 count))
     )
-    (map get-game-by-id (generate-game-ids end-id actual-count))
+    ;; Return a simple list of game data for the requested range
+    (list
+      (if (> actual-start u0) (get-game-info actual-start) none)
+      (if (and (> actual-start u1) (> actual-count u1)) (get-game-info (- actual-start u1)) none)
+      (if (and (> actual-start u2) (> actual-count u2)) (get-game-info (- actual-start u2)) none)
+      (if (and (> actual-start u3) (> actual-count u3)) (get-game-info (- actual-start u3)) none)
+      (if (and (> actual-start u4) (> actual-count u4)) (get-game-info (- actual-start u4)) none)
+      (if (and (> actual-start u5) (> actual-count u5)) (get-game-info (- actual-start u5)) none)
+      (if (and (> actual-start u6) (> actual-count u6)) (get-game-info (- actual-start u6)) none)
+      (if (and (> actual-start u7) (> actual-count u7)) (get-game-info (- actual-start u7)) none)
+      (if (and (> actual-start u8) (> actual-count u8)) (get-game-info (- actual-start u8)) none)
+      (if (and (> actual-start u9) (> actual-count u9)) (get-game-info (- actual-start u9)) none)
+    )
   )
+)
+
+;; Helper function to get game info with ID
+(define-private (get-game-info (game-id uint))
+  (some {
+    game-id: game-id,
+    game-data: (map-get? games { game-id: game-id })
+  })
 )
 
 ;; NEW FUNCTION 7: Bulk resolve games (resolve multiple games at once)
@@ -214,49 +253,21 @@
 ;; Helper function for bulk resolve
 (define-private (resolve-single-game (game-id uint))
   (match (resolve-game game-id)
-    success success
-    error { game-id: game-id, error: error }
-  )
-)
-
-;; Helper function to generate game IDs for recent games
-(define-private (generate-game-ids (start-id uint) (count uint))
-  (if (is-eq count u0)
-    (list)
-    (if (is-eq start-id u0)
-      (list)
-      (unwrap-panic (as-max-len? 
-        (concat 
-          (list start-id) 
-          (generate-game-ids (- start-id u1) (- count u1))
-        ) 
-        u10
-      ))
-    )
-  )
-)
-
-;; Helper function to get game by ID for mapping
-(define-private (get-game-by-id (game-id uint))
-  {
-    game-id: game-id,
-    game-data: (map-get? games { game-id: game-id })
-  }
-)
-
-;; Helper function to update player statistics
-(define-private (update-player-stats (player principal) (wagered uint) (won uint))
-  (let
-    (
-      (current-stats (get-player-stats player))
-    )
-    (map-set player-stats
-      { player: player }
-      {
-        games-played: (+ (get games-played current-stats) u1),
-        total-wagered: (+ (get total-wagered current-stats) wagered),
-        total-won: (+ (get total-won current-stats) won)
-      }
-    )
+    success { 
+      game-id: game-id, 
+      success: true,
+      dice-roll: (get dice-roll success),
+      won: (get won success),
+      payout: (get payout success),
+      error: none
+    }
+    error { 
+      game-id: game-id, 
+      success: false,
+      dice-roll: u0,
+      won: false,
+      payout: u0,
+      error: (some error)
+    }
   )
 )
